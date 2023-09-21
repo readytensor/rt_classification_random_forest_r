@@ -24,6 +24,7 @@ PREDICTIONS_FILE <- file.path(PREDICTIONS_DIR, 'predictions.csv')
 LABEL_ENCODER_FILE <- file.path(MODEL_ARTIFACTS_PATH, 'label_encoder.rds')
 ENCODED_TARGET_FILE <- file.path(MODEL_ARTIFACTS_PATH, "encoded_target.rds")
 TOP_3_CATEGORIES_MAP <- file.path(MODEL_ARTIFACTS_PATH, "top_3_map.rds")
+COLNAME_MAPPING <- file.path(MODEL_ARTIFACTS_PATH, "colname_mapping.csv")
 
 if (!dir.exists(PREDICTIONS_DIR)) {
   dir.create(PREDICTIONS_DIR, recursive = TRUE)
@@ -86,8 +87,10 @@ if (length(categorical_features) > 0 && file.exists(OHE_ENCODER_FILE)) {
 }
 
 
-colnames(df) <- gsub(" ", "_", colnames(df))
-colnames(df) <- gsub("[^[:alnum:]_]", "_", colnames(df))
+# Load the column name mapping
+colname_mapping <- read.csv(COLNAME_MAPPING)
+# Update the column names based on the mapping
+colnames(df) <- colname_mapping$sanitized[match(colnames(df), colname_mapping$original)]
 
 
 type <- ifelse(model_category == "binary_classification", "response", "probs")

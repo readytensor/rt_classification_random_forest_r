@@ -21,6 +21,7 @@ IMPUTATION_FILE <- file.path(MODEL_ARTIFACTS_PATH, 'imputation.rds')
 LABEL_ENCODER_FILE <- file.path(MODEL_ARTIFACTS_PATH, 'label_encoder.rds')
 ENCODED_TARGET_FILE <- file.path(MODEL_ARTIFACTS_PATH, "encoded_target.rds")
 TOP_3_CATEGORIES_MAP <- file.path(MODEL_ARTIFACTS_PATH, "top_3_map.rds")
+COLNAME_MAPPING <- file.path(MODEL_ARTIFACTS_PATH, "colname_mapping.csv")
 
 
 if (!dir.exists(MODEL_ARTIFACTS_PATH)) {
@@ -123,8 +124,49 @@ if(length(categorical_features) > 0){
     df <- df_encoded
 }
 
-colnames(df) <- gsub(" ", "_", colnames(df))
-colnames(df) <- gsub("[^[:alnum:]_]", "_", colnames(df))
+
+
+# for column names with special characters or spaces
+sanitize_colnames <- function(names_vector) {
+  # Check for unique original column names
+  if (any(duplicated(names_vector))) {
+    stop("Error: Given column names are not unique!")
+  }
+
+  # Trim spaces from column names
+  names_vector <- trimws(names_vector)
+
+  # Special characters sanitization
+  sanitized_names <- gsub(" ", "_", names_vector)
+  sanitized_names <- gsub("[^[:alnum:]_]", "_", sanitized_names)
+
+  # Prefix with "feat_" - this is to get around columns that start with numbers
+  sanitized_names <- paste0("feat_", sanitized_names)
+  
+  # Ensure uniqueness
+  while(any(duplicated(sanitized_names))) {
+    dupes <- table(sanitized_names)
+    dupes <- as.character(names(dupes[dupes > 1]))
+    
+    for(d in dupes) {
+      indices <- which(sanitized_names == d)
+      sanitized_names[indices] <- paste0(d, "_", seq_along(indices))
+    }
+  }
+  
+  return(sanitized_names)
+}
+
+# save the column name mapping to a file
+new_colnames <- sanitize_colnames(colnames(df))
+colname_mapping <- data.frame(
+  original = colnames(df),
+  sanitized = new_colnames
+)
+write.csv(colname_mapping, COLNAME_MAPPING, row.names = FALSE)
+
+# apply new column names to df
+colnames(df) <- new_colnames
 
 
 # Label encoding target feature
@@ -137,8 +179,11 @@ saveRDS(encoded_target, ENCODED_TARGET_FILE)
 # Train the Classifier
 # We choose Random Forest Classifier, but feel free to try your own and compare the results.
 if (model_category == 'binary_classification'){
-    model <- randomForest(as.factor(encoded_target) ~ ., data = df, ntree=100) # Use as.factor() for the target to ensure it's treated as classification
+    # Use as.factor() for the target to ensure it's treated as classification
+    model <- randomForest(as.factor(encoded_target) ~ ., data = df, ntree=100) 
+
 } else if (model_category == "multiclass_classification") {
-    model <- randomForest(as.factor(encoded_target) ~ ., data = df, ntree=100) # Same Random Forest function for multiclass
+    # Same Random Forest function for multiclass
+    model <- randomForest(as.factor(encoded_target) ~ ., data = df, ntree=100) 
 }
 saveRDS(model, PREDICTOR_FILE_PATH)
