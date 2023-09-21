@@ -123,6 +123,9 @@ if(length(categorical_features) > 0){
     df <- df_encoded
 }
 
+colnames(df) <- gsub(" ", "_", colnames(df))
+colnames(df) <- gsub("[^[:alnum:]_]", "_", colnames(df))
+
 
 # Label encoding target feature
 levels_target <- levels(factor(target))
@@ -135,7 +138,6 @@ saveRDS(encoded_target, ENCODED_TARGET_FILE)
 # We choose Random Forest Classifier, but feel free to try your own and compare the results.
 if (model_category == 'binary_classification'){
     model <- randomForest(as.factor(encoded_target) ~ ., data = df, ntree=100) # Use as.factor() for the target to ensure it's treated as classification
-
 } else if (model_category == "multiclass_classification") {
     model <- randomForest(as.factor(encoded_target) ~ ., data = df, ntree=100) # Same Random Forest function for multiclass
 }
