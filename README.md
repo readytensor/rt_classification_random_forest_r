@@ -2,8 +2,6 @@
 
 This is a dockerized random forest model for binary and multiclass classification implemented in R. The purpose of this project is to provide a functional model that can be used as a template for building your own classification model.
 
-## This repository is a dockerized implementation of the re-usable classifier model.
-
 ## Project Structure
 
 The following is the directory structure of the project:
