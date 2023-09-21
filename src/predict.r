@@ -86,6 +86,10 @@ if (length(categorical_features) > 0 && file.exists(OHE_ENCODER_FILE)) {
 }
 
 
+colnames(df) <- gsub(" ", "_", colnames(df))
+colnames(df) <- gsub("[^[:alnum:]_]", "_", colnames(df))
+
+
 type <- ifelse(model_category == "binary_classification", "response", "probs")
 
 # Making predictions
