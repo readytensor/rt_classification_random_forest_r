@@ -34,7 +34,7 @@ if (!dir.exists(file.path(MODEL_ARTIFACTS_PATH, "predictor"))) {
 
 # Reading the schema
 # The schema contains metadata about the datasets. 
-# We will use the schema to get information about the type of each feature (NUMERIC or CATEGORICAL)
+# We will use the scehma to get information about the type of each feature (NUMERIC or CATEGORICAL)
 # and the id and target features, this will be helpful in preprocessing stage.
 
 file_name <- list.files(INPUT_SCHEMA_DIR, pattern = "*.json")[1]
@@ -46,7 +46,7 @@ categorical_features <- features$name[features$dataType == "CATEGORICAL"]
 id_feature <- schema$id$name
 target_feature <- schema$target$name
 model_category <- schema$modelCategory
-
+nullable_features <- features$name[features$nullable == TRUE]
 
 # Reading training data
 file_name <- list.files(TRAIN_DIR, pattern = "*.csv")[1]
@@ -57,31 +57,13 @@ col_names <- unlist(strsplit(header_line, split = ",")) # assuming ',' is the de
 df <- read.csv(file.path(TRAIN_DIR, file_name), skip = 0, col.names = col_names, check.names=FALSE)
 
 # Data Preprocessing
-# Data preprocessing is very important before training the model, as the data may contain missing values in some cells. 
-# Moreover, most of the learning algorithms cannot work with categorical data, thus the data has to be encoded.
-# In this section we will impute the missing values and encode the categorical features. Afterwards the data will be ready to train the model.
-
-# You can add your own preprocessing steps such as:
-
-# Normalization
-# Outlier removal
-# Handling imbalanced classes
-# Dropping or adding features
-
-# Important note:
-# Saving the values used for imputation during training step is crucial. 
-# These values will be used to impute missing data in the testing set. 
-# This is very important to avoid the well known problem of data leakage. 
-# During testing, you should not make any assumptions about the data in hand, 
-# alternatively anything needed during the testing phase should be learned from the training phase.
-# This is why we are creating a dictionary of values used during training to reuse these values during testing.
-
-
 # Impute missing data
 imputation_values <- list()
-
-columns_with_missing_values <- colnames(df)[apply(df, 2, anyNA)]
-for (column in columns_with_missing_values) {
+for (column in nullable_features) {
+    # Create missing indicator
+    missing_indicator_col_name <- paste(column, "is_missing", sep="_")
+    df[[missing_indicator_col_name]] <- ifelse(is.na(df[[column]]), 1, 0)
+    
     if (column %in% numeric_features) {
         value <- median(df[, column], na.rm = TRUE)
     } else {
@@ -103,30 +85,56 @@ ids <- df[, id_feature]
 target <- df[, target_feature]
 df <- df %>% select(-all_of(c(id_feature, target_feature)))
 
-
 # One Hot Encoding
 if(length(categorical_features) > 0){
-    top_3_map <- list()
+    top_10_map <- list()
     for(col in categorical_features) {
-        # Get the top 3 categories for the column
-        top_3_categories <- names(sort(table(df[[col]]), decreasing = TRUE)[1:3])
+        # Get the top 10 categories for the column
+        top_10_categories <- names(sort(table(df[[col]]), decreasing = TRUE)[1:10])
 
         # Save the top 3 categories for this column
-        top_3_map[[col]] <- top_3_categories
+        top_10_map[[col]] <- top_10_categories
         # Replace categories outside the top 3 with "Other"
-        df[[col]][!(df[[col]] %in% top_3_categories)] <- "Other"
+        df[[col]][!(df[[col]] %in% top_10_categories)] <- "Other"
     }
 
     df_encoded <- dummy_cols(df, select_columns = categorical_features, remove_selected_columns = TRUE)
     encoded_columns <- setdiff(colnames(df_encoded), colnames(df))
     saveRDS(encoded_columns, OHE_ENCODER_FILE)
-    saveRDS(top_3_map, TOP_3_CATEGORIES_MAP)
+    saveRDS(top_10_map, TOP_10_CATEGORIES_MAP)
     df <- df_encoded
 }
 
+# Remove constant columns
+constant_columns <- which(apply(df, 2, var) == 0)
+if (length(constant_columns) > 0) {
+    df <- df[,-constant_columns]
+} 
+
+# Standard Scaling
+scaling_values <- list()
+for (feature in numeric_features) {
+    feature_mean <- mean(df[[feature]], na.rm = TRUE)
+    feature_std <- sd(df[[feature]], na.rm = TRUE)
+    scaling_values[[feature]] <- list(mean = feature_mean, std = feature_std)
+    
+    # Standardize the feature
+    df[[feature]] <- (df[[feature]] - feature_mean) / feature_std
+}
+
+# Save the scaling values for use during testing
+saveRDS(scaling_values, SCALING_FILE)
+
+# Cap outliers
+lower_bound <- -4
+upper_bound <- 4
+for (feature in numeric_features) {
+    df[[feature]] <- ifelse(df[[feature]] < lower_bound, lower_bound, df[[feature]])
+    df[[feature]] <- ifelse(df[[feature]] > upper_bound, upper_bound, df[[feature]])
+}
 
 
-# for column names with special characters or spaces
+# Sanitize column names with special characters or spaces
 sanitize_colnames <- function(names_vector) {
   # Check for unique original column names
   if (any(duplicated(names_vector))) {
@@ -152,8 +160,7 @@ sanitize_colnames <- function(names_vector) {
       indices <- which(sanitized_names == d)
       sanitized_names[indices] <- paste0(d, "_", seq_along(indices))
     }
-  }
-  
+  }  
   return(sanitized_names)
 }
 
