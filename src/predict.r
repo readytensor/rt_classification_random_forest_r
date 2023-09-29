@@ -21,10 +21,12 @@ PREDICTOR_FILE_PATH <- file.path(PREDICTOR_DIR_PATH, "predictor.rds")
 IMPUTATION_FILE <- file.path(MODEL_ARTIFACTS_PATH, 'imputation.rds')
 PREDICTIONS_DIR <- file.path(OUTPUT_DIR, 'predictions')
 PREDICTIONS_FILE <- file.path(PREDICTIONS_DIR, 'predictions.csv')
+TOP_10_CATEGORIES_MAP <- file.path(MODEL_ARTIFACTS_PATH, "top_10_map.rds")
+COLNAME_MAPPING <- file.path(MODEL_ARTIFACTS_PATH, "colname_mapping.csv")
+SCALING_FILE <- file.path(MODEL_ARTIFACTS_PATH, "scaler.rds")
 LABEL_ENCODER_FILE <- file.path(MODEL_ARTIFACTS_PATH, 'label_encoder.rds')
 ENCODED_TARGET_FILE <- file.path(MODEL_ARTIFACTS_PATH, "encoded_target.rds")
-TOP_3_CATEGORIES_MAP <- file.path(MODEL_ARTIFACTS_PATH, "top_3_map.rds")
-COLNAME_MAPPING <- file.path(MODEL_ARTIFACTS_PATH, "colname_mapping.csv")
+
 
 if (!dir.exists(PREDICTIONS_DIR)) {
   dir.create(PREDICTIONS_DIR, recursive = TRUE)
@@ -41,6 +43,8 @@ id_feature <- schema$id$name
 target_feature <- schema$target$name
 target_classes <- schema$target$classes
 model_category <- schema$modelCategory
+nullable_features <- features$name[features$nullable == TRUE]
+
 
 # Reading test data.
 file_name <- list.files(TEST_DIR, pattern = "*.csv", full.names = TRUE)[1]
@@ -54,8 +58,16 @@ df <- read.csv(file_name, skip = 0, col.names = col_names, check.names=FALSE)
 # Data preprocessing
 # Note that when we work with testing data, we have to impute using the same values learned during training. This is to avoid data leakage.
 imputation_values <- readRDS(IMPUTATION_FILE)
-for (column in names(df)[sapply(df, function(col) any(is.na(col)))]) {
-  df[, column][is.na(df[, column])] <- imputation_values[[column]]
+
+for (column in nullable_features) {
+    # Create missing indicator
+    missing_indicator_col_name <- paste(column, "is_missing", sep="_")
+    df[[missing_indicator_col_name]] <- ifelse(is.na(df[[column]]), 1, 0)
+    
+    # Impute missing values
+    if (!is.null(imputation_values[[column]])) {
+        df[, column][is.na(df[, column])] <- imputation_values[[column]]
+    }
 }
 
 # Saving the id column in a different variable and then dropping it.
@@ -65,11 +77,11 @@ df[[id_feature]] <- NULL
 # Encoding
 # We encode the data using the same encoder that we saved during training.
 if (length(categorical_features) > 0 && file.exists(OHE_ENCODER_FILE)) {
-  top_3_map <- readRDS(TOP_3_CATEGORIES_MAP)
+  top_10_map <- readRDS(TOP_10_CATEGORIES_MAP)
   encoder <- readRDS(OHE_ENCODER_FILE)
   for(col in categorical_features) {
-    # Use the saved top 3 categories to replace values outside these categories with 'Other'
-    df[[col]][!(df[[col]] %in% top_3_map[[col]])] <- "Other"
+    # Use the saved top 10 categories to replace values outside these categories with 'Other'
+    df[[col]][!(df[[col]] %in% top_10_map[[col]])] <- "Other"
   }
 
   test_df_encoded <- dummy_cols(df, select_columns = categorical_features, remove_selected_columns = TRUE)
@@ -86,10 +98,25 @@ if (length(categorical_features) > 0 && file.exists(OHE_ENCODER_FILE)) {
     df <- test_df_encoded[, !names(test_df_encoded) %in% extra_cols]
 }
 
+# Standard Scaling
+scaling_values <- readRDS(SCALING_FILE) # Assuming you've saved scaling values during training
+for (feature in numeric_features) {
+    df[[feature]] <- (df[[feature]] - scaling_values[[feature]]$mean) / scaling_values[[feature]]$std
+}
+
+# Outlier Capping for Standard Scaled Data
+lower_bound <- -4
+upper_bound <- 4
+
+for (feature in numeric_features) {
+    df[[feature]] <- ifelse(df[[feature]] < lower_bound, lower_bound, df[[feature]])
+    df[[feature]] <- ifelse(df[[feature]] > upper_bound, upper_bound, df[[feature]])
+}
 
 # Load the column name mapping
 colname_mapping <- read.csv(COLNAME_MAPPING)
 # Update the column names based on the mapping
+df <- df[, colname_mapping$original]
 colnames(df) <- colname_mapping$sanitized[match(colnames(df), colname_mapping$original)]
 
 

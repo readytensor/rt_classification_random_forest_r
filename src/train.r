@@ -18,10 +18,12 @@ MODEL_ARTIFACTS_PATH <- file.path(MODEL_INPUTS_OUTPUTS, "model", "artifacts")
 OHE_ENCODER_FILE <- file.path(MODEL_ARTIFACTS_PATH, 'ohe.rds')
 PREDICTOR_FILE_PATH <- file.path(MODEL_ARTIFACTS_PATH, "predictor", "predictor.rds")
 IMPUTATION_FILE <- file.path(MODEL_ARTIFACTS_PATH, 'imputation.rds')
-LABEL_ENCODER_FILE <- file.path(MODEL_ARTIFACTS_PATH, 'label_encoder.rds')
-ENCODED_TARGET_FILE <- file.path(MODEL_ARTIFACTS_PATH, "encoded_target.rds")
 TOP_10_CATEGORIES_MAP <- file.path(MODEL_ARTIFACTS_PATH, "top_10_map.rds")
 COLNAME_MAPPING <- file.path(MODEL_ARTIFACTS_PATH, "colname_mapping.csv")
+SCALING_FILE <- file.path(MODEL_ARTIFACTS_PATH, "scaler.rds")
+LABEL_ENCODER_FILE <- file.path(MODEL_ARTIFACTS_PATH, 'label_encoder.rds')
+ENCODED_TARGET_FILE <- file.path(MODEL_ARTIFACTS_PATH, "encoded_target.rds")
+
 
 
 if (!dir.exists(MODEL_ARTIFACTS_PATH)) {
@@ -186,11 +188,9 @@ saveRDS(encoded_target, ENCODED_TARGET_FILE)
 # Train the Classifier
 # We choose Random Forest Classifier, but feel free to try your own and compare the results.
 if (model_category == 'binary_classification'){
-    # Use as.factor() for the target to ensure it's treated as classification
-    model <- randomForest(as.factor(encoded_target) ~ ., data = df, ntree=100) 
+    model <- randomForest(as.factor(encoded_target) ~ ., data = df, ntree=100) # Use as.factor() for the target to ensure it's treated as classification
 
 } else if (model_category == "multiclass_classification") {
-    # Same Random Forest function for multiclass
-    model <- randomForest(as.factor(encoded_target) ~ ., data = df, ntree=100) 
+    model <- randomForest(as.factor(encoded_target) ~ ., data = df, ntree=100) # Same Random Forest function for multiclass
 }
 saveRDS(model, PREDICTOR_FILE_PATH)
